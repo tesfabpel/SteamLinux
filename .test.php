@@ -33,6 +33,11 @@
 			$this->assertNotRegExp( '/^ +/m', $games, 'Spaces used, we only allow tabs' );
 			$this->assertNotRegExp( '/^\t+ +/m', $games, 'Tabs mixed with spaces, we only allow tabs' );
 			
+			$games = trim( $games );
+			
+			$this->assertNotRegExp( '/\s$/m', $games, 'End of line whitespace found, fix it' );
+			$this->assertNotRegExp( '/^$/m', $games, 'Empty line found, fix it' );
+			
 			return $games;
 		}
 		
@@ -43,10 +48,9 @@
 		{
 			$games = json_decode( $games, true );
 			
-			$this->assertTrue( json_last_error() === JSON_ERROR_NONE, 'JSON Error: ' . json_last_error_msg() );
+			$this->assertSame( json_last_error(), JSON_ERROR_NONE, 'JSON Error: ' . ( function_exists( 'json_last_error_msg' ) ? json_last_error_msg() : json_last_error() ) );
 			
 			$allowedKeys = Array(
-				'Working'    => 'is_bool',
 				'Hidden'     => 'is_bool',
 				'Beta'       => 'is_bool',
 				'Comment'    => 'is_string',
@@ -56,28 +60,40 @@
 			foreach( $games as $appID => $keys )
 			{
 				$this->assertTrue( is_numeric( $appID ), 'Key "' . $appID . '" must be numeric' );
-				$this->assertTrue( is_array( $keys ), 'Value of "' . $appID . '" must be an array' );
 				
-				foreach( $keys as $key => $value )
+				if( $keys === true )
 				{
-					$this->assertArrayHasKey( $key, $allowedKeys, 'Invalid key "' . $key . '" in "' . $appID . '"' );
-					$this->assertTrue( $allowedKeys[ $key ]( $value ), '"' . $key . '" in "' . $appID . '" is not "' . $allowedKeys[ $key ] . '"' );
+					// We're golden!
+				}
+				else if( is_array( $keys ) )
+				{
+					$this->assertNotEmpty( $keys, '"' . $appID . '" can not be an empty array' );
 					
-					if( $key === 'Working' || $key === 'Beta' )
+					foreach( $keys as $key => $value )
 					{
-						$this->assertFalse( array_key_exists( 'Hidden', $keys ), 'Hidden key cant be used along with ' . $key . ' key in "' . $appID . '"' );
-						$this->assertTrue( $value, $key . ' key in "' . $appID . '" can only be set to true because we only list working games' );
+						$this->assertArrayHasKey( $key, $allowedKeys, 'Invalid key "' . $key . '" in "' . $appID . '"' );
+						$this->assertTrue( $allowedKeys[ $key ]( $value ), '"' . $key . '" in "' . $appID . '" is not "' . $allowedKeys[ $key ] . '"' );
+						
+						if( $key === 'Beta' )
+						{
+							$this->assertTrue( $value, $key . ' key in "' . $appID . '" can only be set to true' );
+						}
+						else if( $key === 'Hidden' )
+						{
+							$this->assertTrue( $value, $key . ' key in "' . $appID . '" can only be set to true' );
+							$this->assertArrayNotHasKey( 'Beta', $keys, 'Beta key can not be used along with Hidden key in "' . $appID . '"' );
+							$this->assertArrayHasKey( 'Comment', $keys, 'Hidden app "' . $appID . '" must contain a Comment explaining why it was hidden' );
+						}
+						else if( $key === 'CommentURL' )
+						{
+							$this->assertArrayHasKey( 'Comment', $keys, 'CommentURL key can not be without Comment key in "' . $appID . '"' );
+							$this->assertStringStartsWith( 'http', $value, 'CommentURL must be an url in "' . $appID . '"' );
+						}
 					}
-					else if( $key === 'Hidden' )
-					{
-						$this->assertFalse( array_key_exists( 'Working', $keys ), 'Working key can not be used along with Hidden key in "' . $appID . '"' );
-						$this->assertFalse( array_key_exists( 'Beta', $keys ), 'Beta key can not be used along with Hidden key in "' . $appID . '"' );
-						$this->assertTrue( array_key_exists( 'Comment', $keys ), 'Hidden app "' . $appID . '" must contain a Comment explaining why it was hidden' );
-					}
-					else if( $key === 'CommentURL' )
-					{
-						$this->assertTrue( array_key_exists( 'Comment', $keys ), 'CommentURL key cant be without Comment key in "' . $appID . '"' );
-					}
+				}
+				else
+				{
+					$this->assertTrue( false, 'Key "' . $appID . '" has an invalid value' );
 				}
 			}
 			
@@ -89,10 +105,22 @@
 		 */
 		public function testSorting( $games )
 		{
-			$gamesOriginal = $games;
+			$gamesSorted = $games;
 			
-			ksort( $games );
-			
-			$this->assertTrue( $gamesOriginal === $games, 'File must be sorted correctly by appid' );
+			ksort( $gamesSorted );
+
+			if( $games !== $gamesSorted )
+			{
+				$gamesKeys = array_keys( $games );
+				$gamesSortedKeys = array_keys( $gamesSorted );
+				$cachedCount = count( $gamesKeys );
+				
+				unset( $games, $gamesSorted );
+				
+				for( $i = 0; $i < $cachedCount; ++$i )
+				{
+					$this->assertEquals( $gamesKeys[ $i ], $gamesSortedKeys[ $i ], 'File must be sorted correctly by appid, problem at "' . $gamesKeys[ $i ] . '"' );
+				}
+			}
 		}
 	}
